@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+## MicroPython / Casio Calculator Projects
+
+- Never use f-strings as they are invalid syntax in MicroPython
+- Time module is not available in MicroPython.
+- Use string concatenation with + operator and str() function instead (e.g., "Score: " + str(score))
+- Alternatively, use .format() method for string formatting
+- Assume code needs to be compatible with MicroPython limitations
+- All files must have a maximum of 300 lines. Use `wc -l <file>` to check the number of lines.
+- `random.shuffle` is not available.
