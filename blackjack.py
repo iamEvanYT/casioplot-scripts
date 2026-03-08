@@ -1,296 +1,254 @@
-from casioplot import *
+from casioplot import getkey, show_screen
+from casioplot import clear_screen
+from bj_ui import *
 import random
 
-# --------------------------
-# Key constants (STRINGS)
-# --------------------------
-KEY_RIGHT = "25"
-KEY_LEFT  = "23"
-KEY_UP    = "14"
-KEY_DOWN  = "34"
-KEY_OK    = "24"
-KEY_BACK  = "22"
+K_R = "25"; K_L = "23"
+K_U = "14"; K_D = "34"
+K_OK = "24"; K_BK = "22"
 
-# --------------------------
-# Card helpers
-# --------------------------
 def card_val(c):
-    if c in ['J','Q','K']:
-        return 10
-    if c == 'A':
-        return 11
-    return int(c)
+  r = c[0]
+  if r in ('J', 'Q', 'K'):
+    return 10
+  if r == 'A':
+    return 11
+  return int(r)
 
 def hand_val(h):
-    v = sum(card_val(c) for c in h)
-    a = h.count('A')
-    while v > 21 and a > 0:
-        v -= 10
-        a -= 1
-    return v
+  v = 0; a = 0
+  for c in h:
+    v += card_val(c)
+    if c[0] == 'A':
+      a += 1
+  while v > 21 and a > 0:
+    v -= 10; a -= 1
+  return v
 
 def new_deck():
-    return ['2','3','4','5','6','7','8','9','10','J','Q','K','A'] * 4
+  d = []
+  for s in ['H', 'D', 'S', 'C']:
+    for r in ['2','3','4','5','6','7','8',
+              '9','10','J','Q','K','A']:
+      d.append((r, s))
+  return d
 
-# --------------------------
-# UI helpers
-# --------------------------
-def draw_button(x, text, selected):
-    y = 170
-    w = 90
-    h = 20
-    color = (255,255,255) if selected else (200,200,200)
-    for i in range(h):
-        for j in range(w):
-            set_pixel(x+j, y+i, color)
-    draw_string(x+5, y+5, text, (0,0,0), "small")
-
-def draw_buttons(options, sel):
-    x = 5
-    for i in range(len(options)):
-        draw_button(x, options[i], i == sel)
-        x += 95
-
-# --------------------------
-# Robust string-based key reader with press+release
-# --------------------------
 def wait_key():
-    """
-    Wait for a real key press (getkey() returns string != "0" and != "None"),
-    then wait for release (getkey() becomes "0" or "None") before returning.
-    Returns the key code as a string.
-    """
-    while True:
-        k = str(getkey())
-        if k != "0" and k != "None":
-            # wait for release
-            while True:
-                r = str(getkey())
-                if r == "0" or r == "None":
-                    break
-            return k
+  while True:
+    k = str(getkey())
+    if k != "0" and k != "None":
+      while True:
+        r = str(getkey())
+        if r == "0" or r == "None":
+          break
+      return k
 
-# --------------------------
-# BETTING SCREEN
-# --------------------------
+def shuffle(d):
+  for i in range(len(d) - 1, 0, -1):
+    j = random.randint(0, i)
+    d[i], d[j] = d[j], d[i]
+
+def tbl(cash, bet, dh, ph, hd, lbl="YOU"):
+  """Draw game table (no show_screen)."""
+  clear_screen()
+  draw_hud(cash, bet)
+  if hd:
+    draw_string(10, 22, "DEALER", BLK, "small")
+  else:
+    draw_string(10, 22,
+      "DEALER: "+str(hand_val(dh)), BLK, "small")
+  draw_hand(dh, 33, hd)
+  draw_string(10, 78,
+    lbl+": "+str(hand_val(ph)), BLK, "small")
+  draw_hand(ph, 89)
+
+def bsel(opts, init=0):
+  """Button selector overlay. Returns index."""
+  sel = init
+  draw_btns(opts, sel)
+  show_screen()
+  while True:
+    k = wait_key()
+    if k == K_R:
+      sel = min(sel+1, len(opts)-1)
+      draw_btns(opts, sel); show_screen()
+    elif k == K_L:
+      sel = max(sel-1, 0)
+      draw_btns(opts, sel); show_screen()
+    elif k == K_OK:
+      return sel
+
 def get_bet(cash):
-    bet = 100
-    min_bet = 10
-    while True:
-        clear_screen()
-        draw_string(10, 10, "Cash: $" + str(cash), (0,0,0), "medium")
-        draw_string(10, 30, "Bet:  $" + str(bet),  (0,0,0), "medium")
-        draw_string(10, 55, "L/R = +/-10", (0,0,0), "small")
-        draw_string(10, 70, "U/D = +/-100", (0,0,0), "small")
-        draw_string(10, 90, "OK = confirm", (0,0,0), "small")
-        draw_string(10, 105, "BACK = quit", (0,0,0), "small")
-        show_screen()
-
-        k = wait_key()
-        if k == KEY_RIGHT:
-            bet = min(bet + 10, cash)
-        elif k == KEY_LEFT:
-            bet = max(bet - 10, min_bet)
-        elif k == KEY_UP:
-            bet = min(bet + 100, cash)
-        elif k == KEY_DOWN:
-            bet = max(bet - 100, min_bet)
-        elif k == KEY_OK:
-            if bet <= cash:
-                return bet
-        elif k == KEY_BACK:
-            return 0
-
-# --------------------------
-# Display cards
-# --------------------------
-def show_hand(y, label, cards, hide_second=False):
-    t = label + ": "
-    for i in range(len(cards)):
-        if i == 1 and hide_second:
-            t += "? "
-        else:
-            t += cards[i] + " "
-    if not hide_second:
-        t += "= " + str(hand_val(cards))
-    draw_string(10, y, t, (0,0,0), "medium")
-
-# --------------------------
-# MAIN GAME
-# --------------------------
-def play():
-    cash = 1000
-    min_bet = 10
-
-    while cash >= min_bet:
-        bet = get_bet(cash)
-        if bet == 0:
-            clear_screen()
-            draw_string(10, 90, "Final Cash: $" + str(cash), (0,0,0), "large")
-            show_screen()
-            wait_key()
-            return
-
-        cash -= bet
-
-        # Fisher-Yates shuffle using random.randint (no random.shuffle)
-        deck = new_deck()
-        for i in range(len(deck)-1, 0, -1):
-            j = random.randint(0, i)
-            deck[i], deck[j] = deck[j], deck[i]
-
-        p_hand = [deck.pop(), deck.pop()]
-        d_hand = [deck.pop(), deck.pop()]
-
-        # Initial render
-        clear_screen()
-        draw_string(10, 5, "Cash: $" + str(cash), (0,0,0), "small")
-        draw_string(10, 20, "Bet:  $" + str(bet), (0,0,0), "small")
-        show_hand(40, "Dealer", d_hand, True)
-        show_hand(60, "You", p_hand)
-        show_screen()
-
-        # Insurance
-        ins = 0
-        if d_hand[0] == "A":
-            draw_buttons(["Yes","No"], 1)
-            show_screen()
-            sel = 1
-            while True:
-                k = wait_key()
-                if k in (KEY_LEFT, KEY_RIGHT):
-                    sel = 1 - sel
-                    draw_buttons(["Yes","No"], sel)
-                    show_screen()
-                elif k == KEY_OK:
-                    if sel == 0:
-                        ib = bet // 2
-                        if cash >= ib:
-                            ins = ib
-                            cash -= ib
-                    break
-
-        # Dealer blackjack check
-        if hand_val(d_hand) == 21:
-            clear_screen()
-            show_hand(30, "Dealer", d_hand)
-            show_hand(60, "You", p_hand)
-            if ins > 0:
-                cash += ins * 2
-            if hand_val(p_hand) == 21:
-                cash += bet
-                draw_string(10, 120, "PUSH", (0,0,0), "large")
-            else:
-                draw_string(10, 120, "Dealer Blackjack!", (0,0,0), "large")
-            show_screen()
-            wait_key()
-            continue
-
-        # Player blackjack
-        if hand_val(p_hand) == 21:
-            cash += int(bet * 2.5)
-            clear_screen()
-            show_hand(30, "Dealer", d_hand)
-            show_hand(60, "You", p_hand)
-            draw_string(10, 120, "BLACKJACK +$" + str(int(bet * 1.5)), (0,0,0), "large")
-            show_screen()
-            wait_key()
-            continue
-
-        # Split check
-        hands = [p_hand]
-        bets = [bet]
-        if card_val(p_hand[0]) == card_val(p_hand[1]) and cash >= bet:
-            draw_buttons(["Split","No"], 1)
-            show_screen()
-            sel = 1
-            while True:
-                k = wait_key()
-                if k in (KEY_LEFT, KEY_RIGHT):
-                    sel = 1 - sel
-                    draw_buttons(["Split","No"], sel)
-                    show_screen()
-                elif k == KEY_OK:
-                    if sel == 0:
-                        cash -= bet
-                        hands = [[p_hand[0], deck.pop()], [p_hand[1], deck.pop()]]
-                        bets = [bet, bet]
-                    break
-
-        # Play each hand
-        for h_index in range(len(hands)):
-            h = hands[h_index]
-            b = bets[h_index]
-            while hand_val(h) < 21:
-                clear_screen()
-                draw_string(10, 5, "Cash: $" + str(cash), (0,0,0), "small")
-                show_hand(30, "Dealer", d_hand, True)
-                show_hand(60, "You", h)
-                options = ["Hit", "Stand"]
-                if len(h) == 2 and cash >= b:
-                    options.insert(1, "Double")
-                draw_buttons(options, 0)
-                show_screen()
-                sel = 0
-                while True:
-                    k = wait_key()
-                    if k == KEY_RIGHT:
-                        sel = min(sel + 1, len(options) - 1)
-                        draw_buttons(options, sel)
-                        show_screen()
-                    elif k == KEY_LEFT:
-                        sel = max(sel - 1, 0)
-                        draw_buttons(options, sel)
-                        show_screen()
-                    elif k == KEY_OK:
-                        break
-                if options[sel] == "Hit":
-                    h.append(deck.pop())
-                elif options[sel] == "Double":
-                    cash -= b
-                    bets[h_index] = b * 2
-                    h.append(deck.pop())
-                    break
-                else:
-                    break
-        # Dealer turn
-        while hand_val(d_hand) < 17:
-            d_hand.append(deck.pop())
-        # Resolve outcomes
-        total_return = 0
-        for i in range(len(hands)):
-            hv = hand_val(hands[i])
-            dv = hand_val(d_hand)
-            stake = bets[i]
-            if hv > 21:
-                pass
-            elif dv > 21 or hv > dv:
-                total_return += stake * 2
-            elif hv == dv:
-                total_return += stake
-        cash += total_return
-        # Result screen
-        clear_screen()
-        show_hand(30, "Dealer", d_hand)
-        if len(hands) == 1:
-            show_hand(60, "You", hands[0])
-        else:
-            show_hand(60, "Hand1", hands[0])
-            show_hand(80, "Hand2", hands[1])
-        net = total_return - sum(bets)
-        if net > 0:
-            draw_string(10, 120, "WIN +$" + str(net), (0,0,0), "large")
-        elif net < 0:
-            draw_string(10, 120, "LOSE $" + str(-net), (0,0,0), "large")
-        else:
-            draw_string(10, 120, "PUSH", (0,0,0), "large")
-
-        show_screen()
-        wait_key()
-    # Out of money
+  bet = 100; mn = 10
+  while True:
     clear_screen()
-    draw_string(10, 100, "Out of money!", (0,0,0), "large")
+    draw_hud(cash, 0)
+    draw_string(80, 40, "PLACE YOUR BET",
+                BLK, "large")
+    draw_string(155, 80, "$"+str(bet),
+                GRN, "large")
+    draw_string(50, 120,
+      "L/R: +/-10   U/D: +/-100", LGRY, "small")
+    draw_string(85, 150,
+      "OK: Deal   BACK: Quit", LGRY, "small")
     show_screen()
-    wait_key()
-# Start
+    k = wait_key()
+    if k == K_R:
+      bet = min(bet+10, cash)
+    elif k == K_L:
+      bet = max(bet-10, mn)
+    elif k == K_U:
+      bet = min(bet+100, cash)
+    elif k == K_D:
+      bet = max(bet-100, mn)
+    elif k == K_OK:
+      if bet <= cash:
+        return bet
+    elif k == K_BK:
+      return 0
+
+def play():
+  cash = 1000
+  while cash >= 10:
+    bet = get_bet(cash)
+    if bet == 0:
+      clear_screen()
+      draw_string(50, 80, "Final: $"+str(cash),
+                  BLK, "large")
+      show_screen(); wait_key()
+      return
+    cash -= bet
+    deck = new_deck(); shuffle(deck)
+    ph = [deck.pop(), deck.pop()]
+    dh = [deck.pop(), deck.pop()]
+    tbl(cash, bet, dh, ph, True)
+    show_screen()
+    # Insurance
+    ins = 0
+    if dh[0][0] == 'A':
+      tbl(cash, bet, dh, ph, True)
+      draw_string(10, 140, "Insurance?",
+                  BLK, "small")
+      sel = bsel(["Yes", "No"], 1)
+      if sel == 0:
+        ib = bet // 2
+        if cash >= ib:
+          ins = ib; cash -= ib
+    # Dealer blackjack
+    if hand_val(dh) == 21:
+      tbl(cash, bet, dh, ph, False)
+      if ins > 0:
+        cash += ins * 2
+      if hand_val(ph) == 21:
+        cash += bet
+        draw_string(100, 140, "PUSH",
+                    LGRY, "large")
+      else:
+        draw_string(30, 140, "Dealer BJ!",
+                    RED, "large")
+      show_screen(); wait_key(); continue
+    # Player blackjack
+    if hand_val(ph) == 21:
+      cash += int(bet * 2.5)
+      tbl(cash, bet, dh, ph, False)
+      draw_string(10, 140,
+        "BLACKJACK! +$"+str(int(bet*1.5)),
+        GOLD, "large")
+      show_screen(); wait_key(); continue
+    # Split
+    hands = [ph]; bets = [bet]
+    if card_val(ph[0]) == card_val(ph[1]):
+      if cash >= bet:
+        tbl(cash, bet, dh, ph, True)
+        draw_string(10, 140, "Split?",
+                    BLK, "small")
+        sel = bsel(["Split", "No"], 1)
+        if sel == 0:
+          cash -= bet
+          hands = [[ph[0], deck.pop()],
+                   [ph[1], deck.pop()]]
+          bets = [bet, bet]
+    # Play each hand
+    for hi in range(len(hands)):
+      h = hands[hi]; b = bets[hi]
+      while hand_val(h) < 21:
+        if len(hands) > 1:
+          lbl = "H" + str(hi+1)
+        else:
+          lbl = "YOU"
+        tbl(cash, b, dh, h, True, lbl)
+        opts = ["Hit", "Stand"]
+        if len(h) == 2 and cash >= b:
+          opts.insert(1, "Double")
+        sel = bsel(opts)
+        if opts[sel] == "Hit":
+          h.append(deck.pop())
+        elif opts[sel] == "Double":
+          cash -= b; bets[hi] = b * 2
+          h.append(deck.pop()); break
+        else:
+          break
+      if hand_val(h) > 21:
+        if len(hands) > 1:
+          lbl = "H" + str(hi+1)
+        else:
+          lbl = "YOU"
+        tbl(cash, bets[hi], dh, h, True, lbl)
+        draw_string(140, 140, "BUST!",
+                    RED, "large")
+        show_screen(); wait_key()
+    # Dealer turn
+    while hand_val(dh) < 17:
+      dh.append(deck.pop())
+    # Resolve
+    tr = 0
+    for i in range(len(hands)):
+      hv = hand_val(hands[i])
+      dv = hand_val(dh)
+      st = bets[i]
+      if hv > 21:
+        pass
+      elif dv > 21 or hv > dv:
+        tr += st * 2
+      elif hv == dv:
+        tr += st
+    cash += tr
+    # Result screen
+    clear_screen()
+    draw_hud(cash, 0)
+    draw_string(10, 22,
+      "DEALER: "+str(hand_val(dh)), BLK, "small")
+    draw_hand(dh, 33)
+    if len(hands) == 1:
+      draw_string(10, 78,
+        "YOU: "+str(hand_val(hands[0])),
+        BLK, "small")
+      draw_hand(hands[0], 89)
+    else:
+      draw_string(10, 78,
+        "H1: "+str(hand_val(hands[0])),
+        BLK, "small")
+      draw_hand(hands[0], 89, False, 10)
+      draw_string(200, 78,
+        "H2: "+str(hand_val(hands[1])),
+        BLK, "small")
+      draw_hand(hands[1], 89, False, 200)
+    net = tr - sum(bets)
+    if net > 0:
+      draw_string(20, 140, "WIN +$"+str(net),
+                  WGRN, "large")
+    elif net < 0:
+      draw_string(20, 140, "LOSE -$"+str(-net),
+                  RED, "large")
+    else:
+      draw_string(100, 140, "PUSH",
+                  LGRY, "large")
+    show_screen(); wait_key()
+  # Game over
+  clear_screen()
+  draw_string(80, 70, "GAME OVER", RED, "large")
+  draw_string(60, 100, "Final: $"+str(cash),
+              BLK, "large")
+  show_screen(); wait_key()
+
 play()

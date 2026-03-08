@@ -10,8 +10,17 @@ A collection of classic games and useful scripts implemented in MicroPython for 
 | `tetris.py` | Tetris |
 | `pac-man.py` | Pac-Man |
 | `minesweeper.py` | Minesweeper |
-| `blackjack.py` | Blackjack card game with betting, splitting, insurance, and doubling down |
+| `blackjack.py` + `bj_ui.py` | Blackjack card game with graphical cards, pixel-art suit symbols, betting, splitting, insurance, and doubling down |
 | `raycaster/` | First-person 3D raycaster using AABB slab and sphere intersection tests |
+
+## Blackjack
+
+Blackjack is a two-file project. Copy both files to your calculator:
+
+- `blackjack.py` - Game logic, betting, split/insurance/double-down flow
+- `bj_ui.py` - Card rendering with drawn card shapes, 5x5 pixel-art suit bitmaps, styled buttons, and colored results
+
+**Controls:** Left/Right to select, OK to confirm, Back to exit.
 
 ## Raycaster
 
